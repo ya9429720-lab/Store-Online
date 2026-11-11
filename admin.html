@@ -335,10 +335,11 @@ async function api(msg){
 /* messages that fail to send (no internet...) are kept and retried automatically */
 const outbox=()=>{try{return JSON.parse(localStorage.getItem('store_outbox')||'[]')}catch(e){return[]}};
 const setOutbox=a=>{try{localStorage.setItem('store_outbox',JSON.stringify(a))}catch(e){}};
+let lastSendError='';
 async function send(msg){
   if(!CLOUD)return false;
   try{await api(msg);return true}
-  catch(e){const o=outbox();o.push(msg);setOutbox(o);return false}
+  catch(e){lastSendError=String((e&&e.message)||e);const o=outbox();o.push(msg);setOutbox(o);return false}
 }
 async function flushOutbox(){
   const o=outbox();if(!CLOUD||!o.length)return;
@@ -365,7 +366,7 @@ function statusHTML(o){
   const wa=`<a class="buy go wa" target="_blank" rel="noopener" href="${waLink(o)}">📲 إرسال الطلب على واتساب</a>`;
   if(!CLOUD)return hint('لإتمام الطلب أرسل تفاصيله لنا على واتساب بالضغط على الزر، حتى نبدأ تجهيزه.','#fff6d6')+wa;
   if(o.sent===true)return hint('✓ تم إرسال طلبك إلى المتجر وسنتواصل معك قريباً.','#e3f8e8');
-  if(o.sent===false)return hint('تعذر إرسال الطلب تلقائياً الآن وسنعيد المحاولة. لتأكيده فوراً أرسله عبر واتساب:','#fff6d6')+wa;
+  if(o.sent===false)return hint('تعذر إرسال الطلب تلقائياً الآن وسنعيد المحاولة. لتأكيده فوراً أرسله عبر واتساب:'+(o.err?'<br><small dir="ltr">'+esc(o.err)+'</small>':''),'#fff6d6')+wa;
   return hint('جارٍ إرسال طلبك للمتجر…','#fff6d6');
 }
 
@@ -402,13 +403,13 @@ async function openOps(){
   const m=$('#accModal');
   m.innerHTML='<div class="box wide"><h2>جارٍ التحميل…</h2></div>';m.classList.add('open');
   try{
-    const o=(await adminApi({action:'adminOrders'})).rows;
+    const oRes=await adminApi({action:'adminOrders'});const o=oRes.rows,info=oRes.info||{};
     const r=(await adminApi({action:'adminReturns'})).rows;
     const card=(kind,id,head,body,st,list,note)=>`<div class="ocard" data-k="${kind}" data-id="${esc(id)}">
       <div class="ohead"><b dir="ltr">${esc(id)}</b>${head}</div>${kind==='orders'?`<div class="tlbox">${timeline(st)}</div>`:''}<pre class="oitems">${esc(body)}</pre>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><select class="stSel">${list.map(x=>`<option${x===st?' selected':''}>${x}</option>`).join('')}</select><input class="stNote" placeholder="ملاحظة للعميل" value="${esc(note||'')}"></div>
       <div class="row" style="margin-top:8px"><button class="buy stSave" style="padding:8px 22px">حفظ</button>${kind==='orders'?'<button class="edit stNext" type="button">⏭ نقل للمرحلة التالية</button>':''}</div></div>`;
-    m.innerHTML=`<div class="box wide"><h2>الطلبات</h2>
+    m.innerHTML=`<div class="box wide"><h2>الطلبات</h2>${info.url?`<p class="muted">الجدول المتصل: <a href="${esc(info.url)}" target="_blank" rel="noopener">${esc(info.name)}</a> · الطلبات المسجلة: ${info.orders}</p>`:''}
       ${o.length?o.map(x=>card('orders',x[0],`<span>${esc(x[2])} · <a href="tel:${esc(x[3])}">${esc(x[3])}</a> · ${money(x[11])}</span>`,`${x[4]} - ${x[5]} - ${x[6]}\n${x[7]?'ملاحظات: '+x[7]+'\n':''}${x[8]}\nالدفع: ${x[12]}`,x[13]||'جديد',ORDER_STATUSES,x[14])).join(''):'<p>لا توجد طلبات.</p>'}
       <h2 style="margin-top:20px">طلبات الاسترجاع</h2>
       ${r.length?r.map(x=>card('returns',x[0],`<span>الطلب ${esc(x[2])} · ${esc(x[3])} · <a href="tel:${esc(x[4])}">${esc(x[4])}</a></span>`,`${x[5]}\nالسبب: ${x[6]}\n${x[7]||''}`,x[8]||'قيد المراجعة',RETURN_STATUSES,x[9])).join(''):'<p>لا توجد طلبات استرجاع.</p>'}
@@ -604,7 +605,7 @@ function renderCheckout(){
     }catch(err){}
     cart=[];saveCart();
     send({action:'order',order}).then(ok=>{
-      try{const o=JSON.parse(localStorage.getItem('store_orders')||'[]');const x=o.find(z=>z.id===order.id);if(x){x.sent=ok;localStorage.setItem('store_orders',JSON.stringify(o))}}catch(e){}
+      try{const o=JSON.parse(localStorage.getItem('store_orders')||'[]');const x=o.find(z=>z.id===order.id);if(x){x.sent=ok;x.err=ok?'':lastSendError;localStorage.setItem('store_orders',JSON.stringify(o))}}catch(e){}
       if(location.hash==='#success-'+order.id)renderSuccess(order.id);
     });
     if(!CLOUD)window.open(waLink(order),'_blank');
@@ -617,6 +618,7 @@ function renderSuccess(id){
   let o=null;
   try{o=JSON.parse(localStorage.getItem('store_orders')||'[]').find(x=>x.id===id)}catch(e){}
   if(!o){location.hash='';return}
+  try{sessionStorage.setItem('trk_auto',JSON.stringify({id:o.id,phone:o.phone}))}catch(e){}
   const pay={cod:'الدفع عند الاستلام',card:'بطاقة بنكية',wallet:'محفظة إلكترونية / إنستاباي'}[o.pay];
   $('#view').innerHTML=`<main><div class="done">
     <div class="ok">✓</div><h1>تم استلام طلبك</h1>
@@ -677,15 +679,31 @@ function renderTrack(){
     e.preventDefault();const out=$('#trOut');out.innerHTML='<p class="muted">جارٍ البحث…</p>';
     try{
       const [r]=await trackOrders([{id:$('#trId').value.trim(),phone:$('#trPhone').value.trim()}]);
-      out.innerHTML=r&&r.found?orderCard(r):'<div class="empty">لم نجد طلباً بهذا الرقم والموبايل. تأكد من البيانات.</div>';
+      out.innerHTML=r&&r.found?orderCard(r):`<div class="empty">${r&&r.reason==='phone'?'رقم الطلب صحيح لكن رقم الموبايل لا يطابق الرقم المستخدم عند إتمام الطلب.':'لم نجد طلباً بهذا الرقم. تأكد من رقم الطلب كما ظهر لك بعد إتمامه.'}</div>`;
       bindRet();
     }catch(err){out.innerHTML='<div class="empty">تعذر الاتصال بالمتجر. حاول مرة أخرى.</div>'}
   };
   const mine=lo.slice(-10).reverse();
-  if(mine.length)trackOrders(mine).then(rs=>{
-    const ok=rs.filter(r=>r.found);
-    if(location.hash==='#track'&&ok.length&&$('#trMine')){$('#trMine').innerHTML='<h3 class="title" style="margin-top:26px">طلباتك السابقة</h3>'+ok.map(orderCard).join('');bindRet()}
-  }).catch(()=>{});
+  const loadMine=()=>{
+    if(!mine.length)return;
+    trackOrders(mine).then(rs=>{
+      if(location.hash!=='#track'||!$('#trMine'))return;
+      const ok=rs.filter(r=>r.found);
+      const lost=mine.filter(o=>!ok.some(r=>String(r.id).toUpperCase()===String(o.id).toUpperCase()));
+      $('#trMine').innerHTML=(ok.length?'<h3 class="title" style="margin-top:26px">طلباتك السابقة</h3>'+ok.map(orderCard).join(''):'')+
+        (lost.length?'<h3 class="title" style="margin-top:26px">طلبات لم تصل للمتجر</h3>'+lost.map(o=>`<div class="ocard"><div class="ohead"><b dir="ltr">${esc(o.id)}</b><span class="badge" style="background:#ffe4e4;color:#c22">لم يصل للمتجر</span></div><p class="muted">${fmtDate(o.date)} · ${money(o.total)}</p><button class="buy resend" data-id="${esc(o.id)}" style="padding:8px 22px;margin-top:8px">🔄 إعادة إرسال الطلب</button><p class="muted rs-out" style="margin-top:6px"></p></div>`).join(''):'');
+      bindRet();
+      document.querySelectorAll('.resend').forEach(b=>b.onclick=async()=>{
+        const o=mine.find(x=>x.id===b.dataset.id),out=b.parentNode.querySelector('.rs-out');
+        b.disabled=true;out.textContent='جارٍ الإرسال…';
+        try{await api({action:'order',order:o});toast('تم إرسال الطلب ✓');loadMine()}
+        catch(err){b.disabled=false;out.innerHTML='تعذر الإرسال. السبب: <b dir="ltr">'+esc((err&&err.message)||err)+'</b>'}
+      });
+    }).catch(err=>{if($('#trMine'))$('#trMine').innerHTML='<p class="muted" style="margin-top:20px">تعذر الاتصال بالسيرفر: <b dir="ltr">'+esc((err&&err.message)||err)+'</b></p>'});
+  };
+  loadMine();
+  let auto=null;try{auto=JSON.parse(sessionStorage.getItem('trk_auto')||'null');sessionStorage.removeItem('trk_auto')}catch(e){}
+  if(auto){$('#trId').value=auto.id;$('#trPhone').value=auto.phone;$('#trForm').requestSubmit()}
 }
 function renderReturns(){
   const u=user||{}, lo=localOrders();
