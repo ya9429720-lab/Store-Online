@@ -93,6 +93,27 @@ footer b{color:var(--yellow)}
 .wa{background:#25d366!important;color:#fff!important}
 .add-btn.exp{background:transparent;color:#fff;border:2px solid var(--yellow)}
 .add-btn.exp:hover{background:var(--yellow);color:var(--purple-dd)}
+.subnav{max-width:1200px;margin:auto;padding:0 20px 10px;display:flex;gap:8px;flex-wrap:wrap}
+.subnav a{color:#fff;font-weight:600;font-size:.92rem;padding:4px 14px;border-radius:50px;background:rgba(255,255,255,.14)}
+.subnav a:hover{background:var(--yellow);color:var(--purple-dd)}
+.ocard{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px}
+.ohead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{background:#f3ecff;color:var(--purple);font-weight:700;padding:3px 12px;border-radius:50px;font-size:.88rem}
+.muted{color:var(--muted);font-size:.92rem;margin:4px 0}
+.tl{display:flex;margin:16px 0 8px}
+.tl .st{flex:1;text-align:center;position:relative;font-size:.8rem;color:var(--muted)}
+.tl .st i{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--line);margin:0 auto 4px;font-style:normal;font-weight:800;position:relative;z-index:1}
+.tl .st.done{color:var(--purple-d);font-weight:700}
+.tl .st.done i{background:var(--purple);color:#fff}
+.tl .st:not(:first-child)::before{content:"";position:absolute;top:14px;left:calc(50% + 17px);width:calc(100% - 34px);height:3px;background:var(--line)}
+.tl .st.done:not(:first-child)::before{background:var(--purple)}
+.tl.cancelled{justify-content:center;color:#e44;font-weight:800}
+.onote{background:#fff6d6;border-radius:10px;padding:8px 12px;margin:8px 0}
+.oitems{white-space:pre-wrap;font-family:inherit;color:var(--muted);font-size:.92rem;margin-top:6px}
+.rline{font-size:.92rem;margin-top:6px}
+.policy{padding-inline-start:18px;color:var(--muted);line-height:1.9;font-size:.95rem}
+.done-box{background:#e3f8e8;border-color:#bfe8c9}
+.box.wide{max-width:760px}
 /* Account */
 .acc-btn{background:none;font-family:inherit;font-size:1rem}
 #accModal{z-index:70}
@@ -159,12 +180,14 @@ footer b{color:var(--yellow)}
     <button class="cart-btn acc-btn" id="accBtn" type="button" aria-label="حسابي"></button>
     <a class="cart-btn" href="#cart" aria-label="سلة المشتريات">🛒 <span>السلة</span><i id="cartCount">0</i></a>
   </div>
+<nav class="subnav"><a href="#">🏠 المتجر</a><a href="#track">📦 تتبع طلبك</a><a href="#returns">↩ استرجاع المنتجات</a></nav>
 </header>
 
 <div id="view"></div>
 
 <footer>
   <p><b>Store Online</b> — كل ما تحتاجه في مكان واحد</p>
+  <p style="margin-top:6px"><a href="#track" style="color:var(--yellow)">تتبع طلبك</a> · <a href="#returns" style="color:var(--yellow)">الاسترجاع</a></p>
 </footer>
 
 
@@ -496,8 +519,96 @@ function renderSuccess(id){
     <p>طريقة الدفع: <b>${pay}</b></p>
     <p style="font-size:1.3rem;font-weight:800;color:var(--purple-d);margin:10px 0">الإجمالي: ${money(o.total)}</p>
     ${statusHTML(o)}
+    <a class="buy go alt" href="#track">📦 تتبع طلبك</a>
     <a class="cta" style="margin-top:14px" href="#">العودة للمتجر</a></div></main>`;
   window.scrollTo(0,0);
+}
+
+/* ===== Order tracking & returns ===== */
+const ORDER_STEPS=['جديد','قيد التجهيز','تم الشحن','تم التسليم'];
+const ORDER_STATUSES=[...ORDER_STEPS,'ملغي'];
+const RETURN_STATUSES=['قيد المراجعة','تمت الموافقة','مرفوض','تم استلام المنتج','تم رد المبلغ'];
+const RETURN_DAYS=14; // مهلة الاسترجاع بالأيام (غيّرها كما تريد)
+const RETURN_REASONS=['المنتج تالف أو به عيب','وصلني منتج مختلف','لا يطابق الوصف','تغيير رأي','مقاس أو لون غير مناسب','سبب آخر'];
+const fmtDate=d=>{try{return new Date(d).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})}catch(e){return ''}};
+const localOrders=()=>{try{return JSON.parse(localStorage.getItem('store_orders')||'[]')}catch(e){return[]}};
+async function trackOrders(list){
+  return (await api({action:'track',orders:list.map(o=>({id:o.id,phone:o.phone}))})).results;
+}
+function timeline(st){
+  if(st==='ملغي')return '<div class="tl cancelled">✕ تم إلغاء الطلب</div>';
+  const at=Math.max(0,ORDER_STEPS.indexOf(st));
+  return `<div class="tl">${ORDER_STEPS.map((x,i)=>`<div class="st ${i<=at?'done':''}"><i>${i<at?'✓':i+1}</i><span>${x}</span></div>`).join('')}</div>`;
+}
+function orderCard(r){
+  return `<div class="ocard"><div class="ohead"><b dir="ltr">${esc(r.id)}</b><span class="badge">${esc(r.status)}</span></div>
+    <p class="muted">${fmtDate(r.date)} · الإجمالي ${money(r.total)}</p>${timeline(r.status)}
+    ${r.note?`<p class="onote">💬 ${esc(r.note)}</p>`:''}
+    <pre class="oitems">${esc(r.items)}</pre>
+    ${(r.returns||[]).map(x=>`<p class="rline">↩ استرجاع <b dir="ltr">${esc(x.id)}</b> (${esc(x.item)}): <span class="badge">${esc(x.status)}</span>${x.note?' — '+esc(x.note):''}</p>`).join('')}
+    <a class="edit" style="display:inline-block;margin-top:10px;padding:6px 18px" href="#returns" data-ret="${esc(r.id)}">طلب استرجاع</a></div>`;
+}
+function bindRet(){document.querySelectorAll('[data-ret]').forEach(a=>a.onclick=()=>{try{sessionStorage.setItem('ret_order',a.dataset.ret)}catch(e){}})}
+function renderTrack(){
+  const u=user||{}, lo=localOrders(), last=lo[lo.length-1];
+  $('#view').innerHTML=`<main><a class="back" href="#">→ العودة للمتجر</a><h2 class="title">تتبع طلبك</h2>
+  ${CLOUD?`<form class="co" id="trForm" style="max-width:640px">
+    <label>رقم الطلب<input id="trId" required dir="ltr" placeholder="SO-123456" value="${esc(last?last.id:'')}"></label>
+    <label>رقم الموبايل المستخدم في الطلب<input id="trPhone" required pattern="01[0-9]{9}" inputmode="numeric" placeholder="01xxxxxxxxx" value="${esc(u.phone||(last?last.phone:''))}"></label>
+    <button class="buy go" type="submit">تتبع</button></form>
+  <div id="trOut" style="max-width:640px;margin-top:18px"></div><div id="trMine" style="max-width:640px"></div>`
+  :'<div class="empty"><p>تتبع الطلبات غير مفعّل حالياً. تواصل معنا على واتساب لمعرفة حالة طلبك.</p></div>'}</main>`;
+  window.scrollTo(0,0);
+  if(!CLOUD)return;
+  $('#trForm').onsubmit=async e=>{
+    e.preventDefault();const out=$('#trOut');out.innerHTML='<p class="muted">جارٍ البحث…</p>';
+    try{
+      const [r]=await trackOrders([{id:$('#trId').value.trim(),phone:$('#trPhone').value.trim()}]);
+      out.innerHTML=r&&r.found?orderCard(r):'<div class="empty">لم نجد طلباً بهذا الرقم والموبايل. تأكد من البيانات.</div>';
+      bindRet();
+    }catch(err){out.innerHTML='<div class="empty">تعذر الاتصال بالمتجر. حاول مرة أخرى.</div>'}
+  };
+  const mine=lo.slice(-10).reverse();
+  if(mine.length)trackOrders(mine).then(rs=>{
+    const ok=rs.filter(r=>r.found);
+    if(location.hash==='#track'&&ok.length&&$('#trMine')){$('#trMine').innerHTML='<h3 class="title" style="margin-top:26px">طلباتك السابقة</h3>'+ok.map(orderCard).join('');bindRet()}
+  }).catch(()=>{});
+}
+function renderReturns(){
+  const u=user||{}, lo=localOrders();
+  let pre='';try{pre=sessionStorage.getItem('ret_order')||''}catch(e){}
+  if(!pre&&lo.length)pre=lo[lo.length-1].id;
+  const items=[...new Set(lo.flatMap(o=>(o.items||[]).map(i=>i.name)))];
+  const policy=`<aside class="sum"><h3>سياسة الاسترجاع</h3><ul class="policy">
+    <li>يمكن طلب الاسترجاع خلال ${RETURN_DAYS.toLocaleString('ar-EG')} يوماً من استلام الطلب.</li>
+    <li>يجب أن يكون المنتج بحالته الأصلية وبعبوته.</li>
+    <li>المنتجات المستخدمة أو التالفة بسبب سوء الاستخدام لا تُسترجع.</li>
+    <li>بعد مراجعة الطلب نتواصل معك لترتيب استلام المنتج ورد المبلغ.</li>
+    <li>تقدر تتابع حالة الاسترجاع من صفحة «تتبع طلبك».</li></ul></aside>`;
+  $('#view').innerHTML=`<main><a class="back" href="#">→ العودة للمتجر</a><h2 class="title">استرجاع المنتجات</h2>
+  <div class="cart-wrap">${CLOUD?`<form class="co" id="rtForm"><h3>طلب استرجاع</h3>
+    <label>رقم الطلب<input id="rtOrder" required dir="ltr" placeholder="SO-123456" value="${esc(pre)}"></label>
+    <label>رقم الموبايل<input id="rtPhone" required pattern="01[0-9]{9}" inputmode="numeric" placeholder="01xxxxxxxxx" value="${esc(u.phone||'')}"></label>
+    <label>المنتج المراد استرجاعه<input id="rtItem" required list="rtItems" placeholder="اسم المنتج"><datalist id="rtItems">${items.map(i=>`<option value="${esc(i)}">`).join('')}</datalist></label>
+    <label>سبب الاسترجاع<select id="rtReason" required><option value="">اختر السبب</option>${RETURN_REASONS.map(r=>`<option>${r}</option>`).join('')}</select></label>
+    <label>تفاصيل إضافية (اختياري)<textarea id="rtDetails" rows="3"></textarea></label>
+    <button class="buy go" type="submit">إرسال طلب الاسترجاع</button></form>`
+    :'<div class="co"><p>لطلب الاسترجاع تواصل معنا على واتساب.</p><a class="buy go wa" target="_blank" rel="noopener" href="https://wa.me/'+OWNER_WA+'">📲 واتساب</a></div>'}
+    ${policy}</div><div id="rtMine" style="max-width:640px"></div></main>`;
+  window.scrollTo(0,0);
+  if(!CLOUD)return;
+  $('#rtForm').onsubmit=async e=>{
+    e.preventDefault();const b=e.target.querySelector('button');b.disabled=true;
+    try{
+      const j=await api({action:'return',orderId:$('#rtOrder').value.trim(),phone:$('#rtPhone').value.trim(),item:$('#rtItem').value.trim(),reason:$('#rtReason').value,details:$('#rtDetails').value.trim()});
+      try{sessionStorage.removeItem('ret_order')}catch(x){}
+      $('#rtForm').outerHTML=`<div class="co done-box"><h3>✓ تم إرسال طلب الاسترجاع</h3><p>رقم الطلب: <b dir="ltr">${esc(j.id)}</b></p><p class="muted">سنراجعه ونتواصل معك قريباً، وتقدر تتابع حالته من صفحة «تتبع طلبك».</p></div>`;
+    }catch(err){b.disabled=false;toast(err.message==='order_not_found'?'لم نجد طلباً بهذا الرقم والموبايل':'تعذر إرسال الطلب، حاول مرة أخرى')}
+  };
+  if(lo.length)trackOrders(lo.slice(-10)).then(rs=>{
+    const all=rs.filter(r=>r.found).flatMap(r=>(r.returns||[]).map(x=>({...x,order:r.id})));
+    if(location.hash==='#returns'&&all.length&&$('#rtMine'))$('#rtMine').innerHTML='<h3 class="title" style="margin-top:26px">طلبات الاسترجاع السابقة</h3>'+all.map(x=>`<div class="ocard"><div class="ohead"><b dir="ltr">${esc(x.id)}</b><span class="badge">${esc(x.status)}</span></div><p class="muted">الطلب <span dir="ltr">${esc(x.order)}</span> · ${esc(x.item)}</p>${x.note?`<p class="onote">💬 ${esc(x.note)}</p>`:''}</div>`).join('');
+  }).catch(()=>{});
 }
 
 function route(){
@@ -505,6 +616,8 @@ function route(){
   const s = location.hash.match(/^#success-(.+)$/);
   if(m) renderProduct(+m[1]);
   else if(location.hash==='#cart') renderCart();
+  else if(location.hash==='#track') renderTrack();
+  else if(location.hash==='#returns') renderReturns();
   else if(location.hash==='#checkout') renderCheckout();
   else if(s) renderSuccess(decodeURIComponent(s[1]));
   else if(location.hash==='#products'){renderHome();$('#products').scrollIntoView()}
