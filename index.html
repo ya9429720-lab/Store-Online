@@ -114,6 +114,23 @@ footer b{color:var(--yellow)}
 .policy{padding-inline-start:18px;color:var(--muted);line-height:1.9;font-size:.95rem}
 .done-box{background:#e3f8e8;border-color:#bfe8c9}
 .box.wide{max-width:760px}
+.trk{position:relative;margin:20px 0 10px}
+.trk-line{position:absolute;top:17px;left:10%;right:10%;height:5px;background:var(--line);border-radius:3px}
+.trk-fill{height:100%;background:linear-gradient(90deg,var(--purple),var(--violet));border-radius:3px;transition:width .6s}
+.trk-steps{display:flex;position:relative}
+.trk-st{flex:1;text-align:center;font-size:.72rem;color:var(--muted);line-height:1.3}
+.trk-st i{width:38px;height:38px;border-radius:50%;background:#fff;border:3px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:1.05rem;margin:0 auto 6px;position:relative;z-index:1}
+.trk-st.done i{background:var(--purple);border-color:var(--purple);color:#fff;font-weight:800}
+.trk-st.now{color:var(--purple-d);font-weight:800}
+.trk-st.now i{border-color:var(--yellow);background:#fff6d6;animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,196,0,.55)}70%{box-shadow:0 0 0 10px rgba(255,196,0,0)}100%{box-shadow:0 0 0 0 rgba(255,196,0,0)}}
+.hist{border-inline-start:3px solid var(--line);margin:14px 10px 4px;padding-inline-start:16px}
+.hi{position:relative;padding-bottom:14px}
+.hi::before{content:"";position:absolute;inset-inline-start:-24px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--line)}
+.hi.cur::before{background:var(--yellow);box-shadow:0 0 0 4px rgba(255,196,0,.3)}
+.hi.cur b{color:var(--purple-d)}
+.hi small{display:block;color:var(--muted)}
+.hi p{margin:2px 0 0;font-size:.92rem}
 /* Account */
 .acc-btn{background:none;font-family:inherit;font-size:1rem}
 #accModal{z-index:70}
@@ -525,7 +542,9 @@ function renderSuccess(id){
 }
 
 /* ===== Order tracking & returns ===== */
-const ORDER_STEPS=['جديد','قيد التجهيز','تم الشحن','تم التسليم'];
+const ORDER_STEPS=['جديد','قيد التجهيز','تم الشحن','خرج للتوصيل','تم التسليم'];
+const STEP_ICON={'جديد':'📝','قيد التجهيز':'📦','تم الشحن':'🚚','خرج للتوصيل':'🛵','تم التسليم':'✅'};
+const STEP_LABEL={'جديد':'تم استلام الطلب','قيد التجهيز':'قيد التجهيز','تم الشحن':'تم الشحن','خرج للتوصيل':'خرج للتوصيل','تم التسليم':'تم التسليم','ملغي':'تم إلغاء الطلب'};
 const ORDER_STATUSES=[...ORDER_STEPS,'ملغي'];
 const RETURN_STATUSES=['قيد المراجعة','تمت الموافقة','مرفوض','تم استلام المنتج','تم رد المبلغ'];
 const RETURN_DAYS=14; // مهلة الاسترجاع بالأيام (غيّرها كما تريد)
@@ -537,13 +556,17 @@ async function trackOrders(list){
 }
 function timeline(st){
   if(st==='ملغي')return '<div class="tl cancelled">✕ تم إلغاء الطلب</div>';
-  const at=Math.max(0,ORDER_STEPS.indexOf(st));
-  return `<div class="tl">${ORDER_STEPS.map((x,i)=>`<div class="st ${i<=at?'done':''}"><i>${i<at?'✓':i+1}</i><span>${x}</span></div>`).join('')}</div>`;
+  const n=ORDER_STEPS.length, at=Math.max(0,ORDER_STEPS.indexOf(st));
+  return `<div class="trk"><div class="trk-line"><div class="trk-fill" style="width:${at/(n-1)*100}%"></div></div>
+    <div class="trk-steps">${ORDER_STEPS.map((x,i)=>`<div class="trk-st ${i<at?'done':i===at?'now':''}"><i>${i<at?'✓':STEP_ICON[x]}</i><span>${STEP_LABEL[x]}</span></div>`).join('')}</div></div>`;
+}
+const fmtDT=d=>{try{return new Date(d).toLocaleString('ar-EG',{day:'numeric',month:'long',hour:'numeric',minute:'2-digit'})}catch(e){return ''}};
+function historyHTML(h){
+  return `<div class="hist">${h.slice().reverse().map((x,i)=>`<div class="hi ${i===0?'cur':''}"><b>${esc(STEP_LABEL[x.s]||x.s)}</b><small>${fmtDT(x.t)}</small>${x.n?`<p>💬 ${esc(x.n)}</p>`:''}</div>`).join('')}</div>`;
 }
 function orderCard(r){
   return `<div class="ocard"><div class="ohead"><b dir="ltr">${esc(r.id)}</b><span class="badge">${esc(r.status)}</span></div>
-    <p class="muted">${fmtDate(r.date)} · الإجمالي ${money(r.total)}</p>${timeline(r.status)}
-    ${r.note?`<p class="onote">💬 ${esc(r.note)}</p>`:''}
+    <p class="muted">${fmtDate(r.date)} · الإجمالي ${money(r.total)}</p>${timeline(r.status)}${r.history?historyHTML(r.history):(r.note?`<p class="onote">💬 ${esc(r.note)}</p>`:'')}
     <pre class="oitems">${esc(r.items)}</pre>
     ${(r.returns||[]).map(x=>`<p class="rline">↩ استرجاع <b dir="ltr">${esc(x.id)}</b> (${esc(x.item)}): <span class="badge">${esc(x.status)}</span>${x.note?' — '+esc(x.note):''}</p>`).join('')}
     <a class="edit" style="display:inline-block;margin-top:10px;padding:6px 18px" href="#returns" data-ret="${esc(r.id)}">طلب استرجاع</a></div>`;
