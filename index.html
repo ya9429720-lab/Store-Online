@@ -114,6 +114,23 @@ footer b{color:var(--yellow)}
 .policy{padding-inline-start:18px;color:var(--muted);line-height:1.9;font-size:.95rem}
 .done-box{background:#e3f8e8;border-color:#bfe8c9}
 .box.wide{max-width:760px}
+.trk{position:relative;margin:20px 0 10px}
+.trk-line{position:absolute;top:17px;left:10%;right:10%;height:5px;background:var(--line);border-radius:3px}
+.trk-fill{height:100%;background:linear-gradient(90deg,var(--purple),var(--violet));border-radius:3px;transition:width .6s}
+.trk-steps{display:flex;position:relative}
+.trk-st{flex:1;text-align:center;font-size:.72rem;color:var(--muted);line-height:1.3}
+.trk-st i{width:38px;height:38px;border-radius:50%;background:#fff;border:3px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:1.05rem;margin:0 auto 6px;position:relative;z-index:1}
+.trk-st.done i{background:var(--purple);border-color:var(--purple);color:#fff;font-weight:800}
+.trk-st.now{color:var(--purple-d);font-weight:800}
+.trk-st.now i{border-color:var(--yellow);background:#fff6d6;animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,196,0,.55)}70%{box-shadow:0 0 0 10px rgba(255,196,0,0)}100%{box-shadow:0 0 0 0 rgba(255,196,0,0)}}
+.hist{border-inline-start:3px solid var(--line);margin:14px 10px 4px;padding-inline-start:16px}
+.hi{position:relative;padding-bottom:14px}
+.hi::before{content:"";position:absolute;inset-inline-start:-24px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--line)}
+.hi.cur::before{background:var(--yellow);box-shadow:0 0 0 4px rgba(255,196,0,.3)}
+.hi.cur b{color:var(--purple-d)}
+.hi small{display:block;color:var(--muted)}
+.hi p{margin:2px 0 0;font-size:.92rem}
 /* Account */
 .acc-btn{background:none;font-family:inherit;font-size:1rem}
 #accModal{z-index:70}
@@ -194,7 +211,7 @@ footer b{color:var(--yellow)}
 <div class="toast" id="toast"></div>
 <div class="modal" id="accModal" role="dialog" aria-modal="true"></div>
 
-<script src="config.js"></script>
+<script type="text/javascript">document.write('<script src="config.js?v='+Date.now()+'"><\/script>')</script>
 <script>
 const ADMIN=false;
 const API=(window.API_URL||'').trim();
@@ -288,10 +305,17 @@ async function api(msg){
 /* messages that fail to send (no internet...) are kept and retried automatically */
 const outbox=()=>{try{return JSON.parse(localStorage.getItem('store_outbox')||'[]')}catch(e){return[]}};
 const setOutbox=a=>{try{localStorage.setItem('store_outbox',JSON.stringify(a))}catch(e){}};
-async function send(msg){
-  if(!CLOUD)return false;
-  try{await api(msg);return true}
-  catch(e){const o=outbox();o.push(msg);setOutbox(o);return false}
+let lastSendError='';
+const pendingSends={};
+let flushP=Promise.resolve();
+function send(msg){
+  if(!CLOUD)return Promise.resolve(false);
+  const run=(async()=>{
+    try{await api(msg);return true}
+    catch(e){lastSendError=String((e&&e.message)||e);const o=outbox();o.push(msg);setOutbox(o);return false}
+  })();
+  if(msg.action==='order'){pendingSends[msg.order.id]=run;run.then(()=>{delete pendingSends[msg.order.id]})}
+  return run;
 }
 async function flushOutbox(){
   const o=outbox();if(!CLOUD||!o.length)return;
@@ -318,7 +342,7 @@ function statusHTML(o){
   const wa=`<a class="buy go wa" target="_blank" rel="noopener" href="${waLink(o)}">📲 إرسال الطلب على واتساب</a>`;
   if(!CLOUD)return hint('لإتمام الطلب أرسل تفاصيله لنا على واتساب بالضغط على الزر، حتى نبدأ تجهيزه.','#fff6d6')+wa;
   if(o.sent===true)return hint('✓ تم إرسال طلبك إلى المتجر وسنتواصل معك قريباً.','#e3f8e8');
-  if(o.sent===false)return hint('تعذر إرسال الطلب تلقائياً الآن وسنعيد المحاولة. لتأكيده فوراً أرسله عبر واتساب:','#fff6d6')+wa;
+  if(o.sent===false)return hint('تعذر إرسال الطلب تلقائياً الآن وسنعيد المحاولة. لتأكيده فوراً أرسله عبر واتساب:'+(o.err?'<br><small dir="ltr">'+esc(o.err)+'</small>':''),'#fff6d6')+wa;
   return hint('جارٍ إرسال طلبك للمتجر…','#fff6d6');
 }
 
@@ -497,7 +521,7 @@ function renderCheckout(){
     }catch(err){}
     cart=[];saveCart();
     send({action:'order',order}).then(ok=>{
-      try{const o=JSON.parse(localStorage.getItem('store_orders')||'[]');const x=o.find(z=>z.id===order.id);if(x){x.sent=ok;localStorage.setItem('store_orders',JSON.stringify(o))}}catch(e){}
+      try{const o=JSON.parse(localStorage.getItem('store_orders')||'[]');const x=o.find(z=>z.id===order.id);if(x){x.sent=ok;x.err=ok?'':lastSendError;localStorage.setItem('store_orders',JSON.stringify(o))}}catch(e){}
       if(location.hash==='#success-'+order.id)renderSuccess(order.id);
     });
     if(!CLOUD)window.open(waLink(order),'_blank');
@@ -510,6 +534,7 @@ function renderSuccess(id){
   let o=null;
   try{o=JSON.parse(localStorage.getItem('store_orders')||'[]').find(x=>x.id===id)}catch(e){}
   if(!o){location.hash='';return}
+  try{sessionStorage.setItem('trk_auto',JSON.stringify({id:o.id,phone:o.phone}))}catch(e){}
   const pay={cod:'الدفع عند الاستلام',card:'بطاقة بنكية',wallet:'محفظة إلكترونية / إنستاباي'}[o.pay];
   $('#view').innerHTML=`<main><div class="done">
     <div class="ok">✓</div><h1>تم استلام طلبك</h1>
@@ -525,25 +550,33 @@ function renderSuccess(id){
 }
 
 /* ===== Order tracking & returns ===== */
-const ORDER_STEPS=['جديد','قيد التجهيز','تم الشحن','تم التسليم'];
+const ORDER_STEPS=['جديد','قيد التجهيز','تم الشحن','خرج للتوصيل','تم التسليم'];
+const STEP_ICON={'جديد':'📝','قيد التجهيز':'📦','تم الشحن':'🚚','خرج للتوصيل':'🛵','تم التسليم':'✅'};
+const STEP_LABEL={'جديد':'تم استلام الطلب','قيد التجهيز':'قيد التجهيز','تم الشحن':'تم الشحن','خرج للتوصيل':'خرج للتوصيل','تم التسليم':'تم التسليم','ملغي':'تم إلغاء الطلب'};
 const ORDER_STATUSES=[...ORDER_STEPS,'ملغي'];
 const RETURN_STATUSES=['قيد المراجعة','تمت الموافقة','مرفوض','تم استلام المنتج','تم رد المبلغ'];
 const RETURN_DAYS=14; // مهلة الاسترجاع بالأيام (غيّرها كما تريد)
 const RETURN_REASONS=['المنتج تالف أو به عيب','وصلني منتج مختلف','لا يطابق الوصف','تغيير رأي','مقاس أو لون غير مناسب','سبب آخر'];
 const fmtDate=d=>{try{return new Date(d).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})}catch(e){return ''}};
 const localOrders=()=>{try{return JSON.parse(localStorage.getItem('store_orders')||'[]')}catch(e){return[]}};
+const en=v=>String(v==null?'':v).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
 async function trackOrders(list){
-  return (await api({action:'track',orders:list.map(o=>({id:o.id,phone:o.phone}))})).results;
+  await Promise.all([flushP,...Object.values(pendingSends)]); // لا نتتبع طلباً ما زال يُرسل
+  return (await api({action:'track',orders:list.map(o=>({id:en(o.id).trim(),phone:en(o.phone).trim()}))})).results;
 }
 function timeline(st){
   if(st==='ملغي')return '<div class="tl cancelled">✕ تم إلغاء الطلب</div>';
-  const at=Math.max(0,ORDER_STEPS.indexOf(st));
-  return `<div class="tl">${ORDER_STEPS.map((x,i)=>`<div class="st ${i<=at?'done':''}"><i>${i<at?'✓':i+1}</i><span>${x}</span></div>`).join('')}</div>`;
+  const n=ORDER_STEPS.length, at=Math.max(0,ORDER_STEPS.indexOf(st));
+  return `<div class="trk"><div class="trk-line"><div class="trk-fill" style="width:${at/(n-1)*100}%"></div></div>
+    <div class="trk-steps">${ORDER_STEPS.map((x,i)=>`<div class="trk-st ${i<at?'done':i===at?'now':''}"><i>${i<at?'✓':STEP_ICON[x]}</i><span>${STEP_LABEL[x]}</span></div>`).join('')}</div></div>`;
+}
+const fmtDT=d=>{try{return new Date(d).toLocaleString('ar-EG',{day:'numeric',month:'long',hour:'numeric',minute:'2-digit'})}catch(e){return ''}};
+function historyHTML(h){
+  return `<div class="hist">${h.slice().reverse().map((x,i)=>`<div class="hi ${i===0?'cur':''}"><b>${esc(STEP_LABEL[x.s]||x.s)}</b><small>${fmtDT(x.t)}</small>${x.n?`<p>💬 ${esc(x.n)}</p>`:''}</div>`).join('')}</div>`;
 }
 function orderCard(r){
   return `<div class="ocard"><div class="ohead"><b dir="ltr">${esc(r.id)}</b><span class="badge">${esc(r.status)}</span></div>
-    <p class="muted">${fmtDate(r.date)} · الإجمالي ${money(r.total)}</p>${timeline(r.status)}
-    ${r.note?`<p class="onote">💬 ${esc(r.note)}</p>`:''}
+    <p class="muted">${fmtDate(r.date)} · الإجمالي ${money(r.total)}</p>${timeline(r.status)}${r.history?historyHTML(r.history):(r.note?`<p class="onote">💬 ${esc(r.note)}</p>`:'')}
     <pre class="oitems">${esc(r.items)}</pre>
     ${(r.returns||[]).map(x=>`<p class="rline">↩ استرجاع <b dir="ltr">${esc(x.id)}</b> (${esc(x.item)}): <span class="badge">${esc(x.status)}</span>${x.note?' — '+esc(x.note):''}</p>`).join('')}
     <a class="edit" style="display:inline-block;margin-top:10px;padding:6px 18px" href="#returns" data-ret="${esc(r.id)}">طلب استرجاع</a></div>`;
@@ -563,16 +596,44 @@ function renderTrack(){
   $('#trForm').onsubmit=async e=>{
     e.preventDefault();const out=$('#trOut');out.innerHTML='<p class="muted">جارٍ البحث…</p>';
     try{
-      const [r]=await trackOrders([{id:$('#trId').value.trim(),phone:$('#trPhone').value.trim()}]);
-      out.innerHTML=r&&r.found?orderCard(r):'<div class="empty">لم نجد طلباً بهذا الرقم والموبايل. تأكد من البيانات.</div>';
+      const q={id:en($('#trId').value).trim(),phone:en($('#trPhone').value).trim()};
+      let [r]=await trackOrders([q]);
+      const loc=localOrders().find(o=>String(o.id).toUpperCase()===q.id.toUpperCase());
+      for(let k=0;k<3&&loc&&!(r&&r.found);k++){
+        out.innerHTML='<p class="muted">⏳ جارٍ تأكيد طلبك في المتجر…</p>';
+        await new Promise(z=>setTimeout(z,2500));[r]=await trackOrders([q]);
+      }
+      out.innerHTML=r&&r.found?orderCard(r):`<div class="empty">${r&&r.reason==='phone'?'رقم الطلب صحيح لكن رقم الموبايل لا يطابق الرقم المستخدم عند إتمام الطلب.':'لم نجد طلباً بهذا الرقم. تأكد من رقم الطلب كما ظهر لك بعد إتمامه.'}</div>`;
       bindRet();
     }catch(err){out.innerHTML='<div class="empty">تعذر الاتصال بالمتجر. حاول مرة أخرى.</div>'}
   };
   const mine=lo.slice(-10).reverse();
-  if(mine.length)trackOrders(mine).then(rs=>{
-    const ok=rs.filter(r=>r.found);
-    if(location.hash==='#track'&&ok.length&&$('#trMine')){$('#trMine').innerHTML='<h3 class="title" style="margin-top:26px">طلباتك السابقة</h3>'+ok.map(orderCard).join('');bindRet()}
-  }).catch(()=>{});
+  let tries=0;
+  const loadMine=()=>{
+    if(!mine.length)return;
+    trackOrders(mine).then(rs=>{
+      if(location.hash!=='#track'||!$('#trMine'))return;
+      const ok=rs.filter(r=>r.found);
+      const lost=mine.filter(o=>!ok.some(r=>String(r.id).toUpperCase()===String(o.id).toUpperCase()));
+      const fresh=lost.filter(o=>Date.now()-new Date(o.date)<180000);
+      if(fresh.length&&tries++<6){
+        $('#trMine').innerHTML=(ok.length?'<h3 class="title" style="margin-top:26px">طلباتك السابقة</h3>'+ok.map(orderCard).join(''):'')+'<p class="muted" style="margin-top:20px">⏳ جارٍ تأكيد طلبك في المتجر…</p>';
+        bindRet();setTimeout(()=>{if(location.hash==='#track')loadMine()},3000);return;
+      }
+      $('#trMine').innerHTML=(ok.length?'<h3 class="title" style="margin-top:26px">طلباتك السابقة</h3>'+ok.map(orderCard).join(''):'')+
+        (lost.length?'<h3 class="title" style="margin-top:26px">طلبات لم تصل للمتجر</h3>'+lost.map(o=>`<div class="ocard"><div class="ohead"><b dir="ltr">${esc(o.id)}</b><span class="badge" style="background:#ffe4e4;color:#c22">لم يصل للمتجر</span></div><p class="muted">${fmtDate(o.date)} · ${money(o.total)}</p><button class="buy resend" data-id="${esc(o.id)}" style="padding:8px 22px;margin-top:8px">🔄 إعادة إرسال الطلب</button><p class="muted rs-out" style="margin-top:6px"></p></div>`).join(''):'');
+      bindRet();
+      document.querySelectorAll('.resend').forEach(b=>b.onclick=async()=>{
+        const o=mine.find(x=>x.id===b.dataset.id),out=b.parentNode.querySelector('.rs-out');
+        b.disabled=true;out.textContent='جارٍ الإرسال…';
+        try{await api({action:'order',order:o});toast('تم إرسال الطلب ✓');loadMine()}
+        catch(err){b.disabled=false;out.innerHTML='تعذر الإرسال. السبب: <b dir="ltr">'+esc((err&&err.message)||err)+'</b>'}
+      });
+    }).catch(err=>{if($('#trMine'))$('#trMine').innerHTML='<p class="muted" style="margin-top:20px">تعذر الاتصال بالسيرفر: <b dir="ltr">'+esc((err&&err.message)||err)+'</b></p>'});
+  };
+  loadMine();
+  let auto=null;try{auto=JSON.parse(sessionStorage.getItem('trk_auto')||'null');sessionStorage.removeItem('trk_auto')}catch(e){}
+  if(auto){$('#trId').value=auto.id;$('#trPhone').value=auto.phone;$('#trForm').requestSubmit()}
 }
 function renderReturns(){
   const u=user||{}, lo=localOrders();
@@ -639,10 +700,16 @@ $('#home').onclick=()=>{query='';activeCat='الكل';$('#q').value=''};
 
 
 
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t&&t.matches&&t.matches('input[type=tel],input[inputmode=numeric],#trId,#rtOrder')){
+    const v=en(t.value);if(v!==t.value)t.value=v;
+  }
+});
 updateBadge();
 updateAcc();
 route();
-syncProducts();flushOutbox();
+syncProducts();flushP=flushOutbox();
 if(!ADMIN){setInterval(syncProducts,15000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncProducts()})}
 if(!user&&!ADMIN)openAccount(true);
 </script>

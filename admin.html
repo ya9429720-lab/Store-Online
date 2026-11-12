@@ -235,7 +235,7 @@ footer b{color:var(--yellow)}
 <div class="toast" id="toast"></div>
 <div class="modal" id="accModal" role="dialog" aria-modal="true"></div>
 
-<script src="config.js"></script>
+<script type="text/javascript">document.write('<script src="config.js?v='+Date.now()+'"><\/script>')</script>
 <script>
 const ADMIN=true;
 const API=(window.API_URL||'').trim();
@@ -336,10 +336,16 @@ async function api(msg){
 const outbox=()=>{try{return JSON.parse(localStorage.getItem('store_outbox')||'[]')}catch(e){return[]}};
 const setOutbox=a=>{try{localStorage.setItem('store_outbox',JSON.stringify(a))}catch(e){}};
 let lastSendError='';
-async function send(msg){
-  if(!CLOUD)return false;
-  try{await api(msg);return true}
-  catch(e){lastSendError=String((e&&e.message)||e);const o=outbox();o.push(msg);setOutbox(o);return false}
+const pendingSends={};
+let flushP=Promise.resolve();
+function send(msg){
+  if(!CLOUD)return Promise.resolve(false);
+  const run=(async()=>{
+    try{await api(msg);return true}
+    catch(e){lastSendError=String((e&&e.message)||e);const o=outbox();o.push(msg);setOutbox(o);return false}
+  })();
+  if(msg.action==='order'){pendingSends[msg.order.id]=run;run.then(()=>{delete pendingSends[msg.order.id]})}
+  return run;
 }
 async function flushOutbox(){
   const o=outbox();if(!CLOUD||!o.length)return;
@@ -643,8 +649,10 @@ const RETURN_DAYS=14; // مهلة الاسترجاع بالأيام (غيّره�
 const RETURN_REASONS=['المنتج تالف أو به عيب','وصلني منتج مختلف','لا يطابق الوصف','تغيير رأي','مقاس أو لون غير مناسب','سبب آخر'];
 const fmtDate=d=>{try{return new Date(d).toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})}catch(e){return ''}};
 const localOrders=()=>{try{return JSON.parse(localStorage.getItem('store_orders')||'[]')}catch(e){return[]}};
+const en=v=>String(v==null?'':v).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
 async function trackOrders(list){
-  return (await api({action:'track',orders:list.map(o=>({id:o.id,phone:o.phone}))})).results;
+  await Promise.all([flushP,...Object.values(pendingSends)]); // لا نتتبع طلباً ما زال يُرسل
+  return (await api({action:'track',orders:list.map(o=>({id:en(o.id).trim(),phone:en(o.phone).trim()}))})).results;
 }
 function timeline(st){
   if(st==='ملغي')return '<div class="tl cancelled">✕ تم إلغاء الطلب</div>';
@@ -678,18 +686,30 @@ function renderTrack(){
   $('#trForm').onsubmit=async e=>{
     e.preventDefault();const out=$('#trOut');out.innerHTML='<p class="muted">جارٍ البحث…</p>';
     try{
-      const [r]=await trackOrders([{id:$('#trId').value.trim(),phone:$('#trPhone').value.trim()}]);
+      const q={id:en($('#trId').value).trim(),phone:en($('#trPhone').value).trim()};
+      let [r]=await trackOrders([q]);
+      const loc=localOrders().find(o=>String(o.id).toUpperCase()===q.id.toUpperCase());
+      for(let k=0;k<3&&loc&&!(r&&r.found);k++){
+        out.innerHTML='<p class="muted">⏳ جارٍ تأكيد طلبك في المتجر…</p>';
+        await new Promise(z=>setTimeout(z,2500));[r]=await trackOrders([q]);
+      }
       out.innerHTML=r&&r.found?orderCard(r):`<div class="empty">${r&&r.reason==='phone'?'رقم الطلب صحيح لكن رقم الموبايل لا يطابق الرقم المستخدم عند إتمام الطلب.':'لم نجد طلباً بهذا الرقم. تأكد من رقم الطلب كما ظهر لك بعد إتمامه.'}</div>`;
       bindRet();
     }catch(err){out.innerHTML='<div class="empty">تعذر الاتصال بالمتجر. حاول مرة أخرى.</div>'}
   };
   const mine=lo.slice(-10).reverse();
+  let tries=0;
   const loadMine=()=>{
     if(!mine.length)return;
     trackOrders(mine).then(rs=>{
       if(location.hash!=='#track'||!$('#trMine'))return;
       const ok=rs.filter(r=>r.found);
       const lost=mine.filter(o=>!ok.some(r=>String(r.id).toUpperCase()===String(o.id).toUpperCase()));
+      const fresh=lost.filter(o=>Date.now()-new Date(o.date)<180000);
+      if(fresh.length&&tries++<6){
+        $('#trMine').innerHTML=(ok.length?'<h3 class="title" style="margin-top:26px">طلباتك السابقة</h3>'+ok.map(orderCard).join(''):'')+'<p class="muted" style="margin-top:20px">⏳ جارٍ تأكيد طلبك في المتجر…</p>';
+        bindRet();setTimeout(()=>{if(location.hash==='#track')loadMine()},3000);return;
+      }
       $('#trMine').innerHTML=(ok.length?'<h3 class="title" style="margin-top:26px">طلباتك السابقة</h3>'+ok.map(orderCard).join(''):'')+
         (lost.length?'<h3 class="title" style="margin-top:26px">طلبات لم تصل للمتجر</h3>'+lost.map(o=>`<div class="ocard"><div class="ohead"><b dir="ltr">${esc(o.id)}</b><span class="badge" style="background:#ffe4e4;color:#c22">لم يصل للمتجر</span></div><p class="muted">${fmtDate(o.date)} · ${money(o.total)}</p><button class="buy resend" data-id="${esc(o.id)}" style="padding:8px 22px;margin-top:8px">🔄 إعادة إرسال الطلب</button><p class="muted rs-out" style="margin-top:6px"></p></div>`).join(''):'');
       bindRet();
@@ -830,10 +850,16 @@ $('#exportBtn').onclick=async()=>{
 };
 
 
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t&&t.matches&&t.matches('input[type=tel],input[inputmode=numeric],#trId,#rtOrder')){
+    const v=en(t.value);if(v!==t.value)t.value=v;
+  }
+});
 updateBadge();
 updateAcc();
 route();
-syncProducts();flushOutbox();
+syncProducts();flushP=flushOutbox();
 if(!ADMIN){setInterval(syncProducts,15000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncProducts()})}
 if(!user&&!ADMIN)openAccount(true);
 </script>

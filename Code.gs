@@ -99,7 +99,7 @@ function doPost(e) {
       case 'deleteProduct': needKey_(m); return out_(deleteProduct_(m.id));
       case 'track':         return out_(track_(m.orders));
       case 'return':        return out_(return_(m));
-      case 'adminOrders':   needKey_(m); return out_({ ok: true, rows: rows_('Orders', 100) });
+      case 'adminOrders':   needKey_(m); return out_({ ok: true, rows: rows_('Orders', 100), info: info_() });
       case 'adminReturns':  needKey_(m); return out_({ ok: true, rows: rows_('Returns', 100) });
       case 'setStatus':     needKey_(m); return out_(setStatus_(m));
     }
@@ -221,13 +221,17 @@ function uploadImage_(dataUrl, id) {
 
 // ===== تتبع الطلبات والاسترجاع =====
 // مقارنة مرنة: نتجاهل المسافات والأصفار الأولى (جوجل شيت قد يحذف الصفر من الموبايل)
+function digits_(v) {
+  return String(v == null ? '' : v)
+    .replace(/[٠-٩]/g, function (d) { return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); })
+    .replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); });
+}
 function samePhone_(a, b) {
-  return String(a).replace(/\D/g, '').slice(-10) === String(b).replace(/\D/g, '').slice(-10);
+  return digits_(a).replace(/\D/g, '').slice(-10) === digits_(b).replace(/\D/g, '').slice(-10);
 }
 function sameId_(a, b) {
-  return String(a).replace(/\s/g, '').toUpperCase() === String(b).replace(/\s/g, '').toUpperCase();
+  return digits_(a).replace(/\s/g, '').toUpperCase() === digits_(b).replace(/\s/g, '').toUpperCase();
 }
-// التتبع يحتاج رقم الطلب + رقم الموبايل معاً
 function track_(list) {
   list = (list || []).slice(0, 30);
   const orders = sheet_('Orders').getDataRange().getValues().slice(1);
@@ -236,7 +240,11 @@ function track_(list) {
     const id = String(q.id || '').trim().toUpperCase();
     const phone = String(q.phone || '').trim();
     const r = orders.filter(function (x) { return sameId_(x[0], id) && samePhone_(x[3], phone); })[0];
-    if (!r) return { id: q.id, found: false };
+    if (!r) {
+      // نفرّق بين "رقم الطلب غير موجود" و"الموبايل لا يطابق" لنساعد العميل
+      const exists = orders.some(function (x) { return sameId_(x[0], id); });
+      return { id: q.id, found: false, reason: exists ? 'phone' : 'none' };
+    }
     return {
       id: String(r[0]), found: true, date: r[1], status: r[13] || 'جديد', note: r[14] || '',
       updated: r[15] || r[1], total: r[11], items: r[8], history: hist_(r),
@@ -316,4 +324,10 @@ function onEdit(e) {
     sh.getRange(row, 16).setValue(new Date());
     pushHistory_(sh, row, String(e.range.getValue()), String(sh.getRange(row, 15).getValue() || ''));
   } catch (err) {}
+}
+
+// معلومات الجدول المتصل بالسيرفر (للبائع فقط) لتتأكد أن الطلبات تصل للجدول الصحيح
+function info_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return { name: ss.getName(), url: ss.getUrl(), orders: Math.max(sheet_('Orders').getLastRow() - 1, 0) };
 }
