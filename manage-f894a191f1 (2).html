@@ -576,7 +576,10 @@ function openBulk(){
       }
       $('#bkO').innerHTML=`<b style="color:#1a9b4b">✓ تمت إضافة ${add} منتج وتحديث ${upd}.</b> المنتجات الجديدة بتظهر عند العملاء خلال ثواني.${errs.length?`<p class="muted">تم تجاهل ${errs.length} صف: ${errs.slice(0,5).map(e=>'سطر '+e.line+' ('+esc(e.error)+')').join('، ')}</p>`:''}`;
       syncProducts();
-    }catch(e){$('#bkO').textContent='تعذر الاستيراد. تحقق من كلمة السر والاتصال، وحدّث Code.gs لو لسه ما حدّثتوش.';b.disabled=false}
+    }catch(e){
+  $('#bkO').textContent='سبب المشكلة: '+(e.message||String(e));
+  b.disabled=false;
+}
   };
 }
 if(!CLOUD){$('#opsBtn').style.display='none';$('#importBtn').style.display='none';$('#bulkBtn').style.display='none';$('#imgBtn').style.display='none';
