@@ -4,7 +4,7 @@
  */
 
 // ===== الإعدادات (غيّرها قبل النشر) =====
-const ADMIN_KEY = 'Yahia1234$';
+const ADMIN_KEY = 'Yahia1234';
 const OWNER_EMAIL = '';                              // فارغ = بريد حسابك في جوجل
 const TELEGRAM_TOKEN = '';                           // اختياري: إشعار فوري على تيليجرام
 const TELEGRAM_CHAT_ID = '';                         // اختياري

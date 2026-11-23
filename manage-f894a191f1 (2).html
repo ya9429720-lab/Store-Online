@@ -196,12 +196,13 @@ footer b{color:var(--yellow)}
       <input id="q" type="search" placeholder="ابحث عن أي منتج..." aria-label="بحث عن المنتجات" autocomplete="off">
       <button type="submit">بحث</button>
     </form>
-    <span style="color:#ffc400;font-size:.8rem;white-space:nowrap" id="admVer">لوحة البائع · النسخة 5</span>
+    <span style="color:#ffc400;font-size:.8rem;white-space:nowrap" id="admVer">لوحة البائع · النسخة 7</span>
     <button class="add-btn" id="openAdd">+ إضافة منتج</button>
     <button class="add-btn exp" id="exportBtn" type="button">⬇ تصدير للعملاء</button>
     <button class="add-btn exp" id="opsBtn" type="button">📦 الطلبات والمرتجعات</button>
     <button class="add-btn exp" id="importBtn" type="button">📥 إضافة طلبات سابقة</button>
     <button class="add-btn exp" id="bulkBtn" type="button">📋 استيراد منتجات بالجملة</button>
+    <button class="add-btn exp" id="imgBtn" type="button">🖼 رفع صور بالجملة</button>
     <button class="cart-btn acc-btn" id="accBtn" type="button" aria-label="حسابي"></button>
     <a class="cart-btn" href="#cart" aria-label="سلة المشتريات">🛒 <span>السلة</span><i id="cartCount">0</i></a>
   </div>
@@ -386,12 +387,13 @@ function statusHTML(o){
 let adminKey=(()=>{try{return localStorage.getItem('store_key')||''}catch(e){return ''}})();
 function askKey(){return new Promise(res=>{
   const m=$('#accModal');
-  m.innerHTML=`<form class="box"><h2>دخول البائع</h2><p style="color:var(--muted)">اكتب كلمة سر البائع (ADMIN_KEY) التي وضعتها في Code.gs.</p><label>كلمة السر</label><input id="oPw" type="password" required autocomplete="current-password"><div class="row"><button class="buy" type="submit">دخول</button><button class="cancel" type="button" id="oX">إلغاء</button></div></form>`;
+  m.innerHTML=`<form class="box"><h2>دخول البائع</h2><p style="color:var(--muted)">اكتب كلمة سر البائع (ADMIN_KEY) التي وضعتها في Code.gs.</p><label>كلمة السر</label><input id="oPw" type="password" required autocomplete="current-password" dir="ltr"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="oSh" style="width:auto"> إظهار الكلمة</label><div class="row"><button class="buy" type="submit">دخول</button><button class="cancel" type="button" id="oX">إلغاء</button></div></form>`;
   m.classList.add('open');
+  $('#oSh').onchange=e=>{$('#oPw').type=e.target.checked?'text':'password'};
   m.querySelector('form').onsubmit=async e=>{
     e.preventDefault();const k=$('#oPw').value;
     try{await api({action:'auth',key:k});adminKey=k;try{localStorage.setItem('store_key',k)}catch(x){}m.classList.remove('open');res(true)}
-    catch(err){toast('كلمة السر غير صحيحة')}
+    catch(err){toast(err.message==='unauthorized'?'كلمة السر غير صحيحة':'تعذر الاتصال بالسيرفر ('+err.message+'). تأكد من رابط السيرفر ومن نشر آخر نسخة.')}
   };
   $('#oX').onclick=()=>{m.classList.remove('open');res(false)};
 })}
@@ -466,6 +468,60 @@ function openImport(){
     b.disabled=false;
   };
 }
+const imgKey=s=>en(String(s||'')).toLowerCase().replace(/\.[a-z0-9]{2,4}$/i,'').replace(/[^\p{L}\p{N}]+/gu,'');
+function matchImg(file,prods){ // يربط اسم الملف باسم المنتج
+  const full=imgKey(file),stripped=full.replace(/\d{1,2}$/,'');
+  for(const k of [full,stripped]){
+    if(k.length<2)continue;
+    let hit=prods.find(p=>imgKey(p.name)===k);if(hit)return hit;
+    hit=prods.filter(p=>{const n=imgKey(p.name);return n.length>=4&&k.length>=4&&(k.includes(n)||n.includes(k))})
+      .sort((a,b)=>imgKey(b.name).length-imgKey(a.name).length)[0];
+    if(hit)return hit;
+  }
+  return null;
+}
+const shrinkImg=(f,max)=>new Promise((res,rej)=>{
+  const r=new FileReader();r.onerror=rej;
+  r.onload=()=>{const im=new Image();im.onerror=rej;im.onload=()=>{
+    const s=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+    const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
+    res(c.toDataURL('image/jpeg',.8))};im.src=r.result};
+  r.readAsDataURL(f);
+});
+function openImgs(){
+  const m=$('#accModal');
+  m.innerHTML=`<div class="box wide"><h2>رفع صور المنتجات بالجملة</h2>
+    <p class="muted">اختر صوراً كثيرة مرة واحدة. سمّي كل صورة باسم المنتج (مثال: <b>سماعة بلوتوث.jpg</b>) وهتتربط بالمنتج تلقائياً، وتقدر تصحّح الربط قبل الرفع. استخدم صورك أو صور المصنّع بإذنه.</p>
+    <input type="file" id="igF" accept="image/*" multiple>
+    <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="igR" style="width:auto"> استبدال صور المنتجات اللي عندها صورة</label>
+    <datalist id="igL">${products.map(p=>`<option value="${esc(p.name)}">`).join('')}</datalist>
+    <div id="igO" style="margin-top:10px"></div>
+    <div class="row"><button class="buy" id="igGo" type="button" disabled>رفع الصور</button><button class="cancel" id="igX" type="button">إغلاق</button></div></div>`;
+  m.classList.add('open');
+  let items=[];
+  $('#igX').onclick=()=>m.classList.remove('open');
+  $('#igF').onchange=async e=>{
+    const files=[...e.target.files];$('#igO').textContent='جارٍ تجهيز الصور…';items=[];
+    for(const f of files){try{const d=await shrinkImg(f,700),p=matchImg(f.name,products);items.push({file:f.name,d,name:p?p.name:''})}catch(x){}}
+    $('#igO').innerHTML=items.map((it,i)=>`<div class="h"><img src="${it.d}" alt="" style="width:46px;height:46px;border-radius:8px;object-fit:cover"><small dir="ltr">${esc(it.file)}</small><input list="igL" data-i="${i}" value="${esc(it.name)}" placeholder="— تجاهل —" style="max-width:220px"></div>`).join('')+`<p class="muted">${items.filter(x=>x.name).length} من ${items.length} اتربطوا بمنتجات. اللي ما اتربطش اكتب اسم منتجه أو اتركه.</p>`;
+    $('#igO').oninput=ev=>{const i=ev.target.dataset.i;if(i!==undefined)items[+i].name=ev.target.value.trim()};
+    $('#igGo').disabled=!items.length;
+  };
+  $('#igGo').onclick=async()=>{
+    const rep=$('#igR').checked,byName=new Map(products.map(p=>[p.name,p])),jobs=[],seen=new Set();
+    for(const it of items){const p=byName.get(it.name);if(!p||seen.has(p.id))continue;if(p.img&&!rep)continue;seen.add(p.id);jobs.push({id:p.id,img:it.d})}
+    if(!jobs.length){toast('مفيش صور جديدة للرفع (كلها ليها صور، أو مش مربوطة بمنتجات)');return}
+    const b=$('#igGo');b.disabled=true;let ok=0,bad=0;
+    try{
+      for(let i=0;i<jobs.length;i+=4){
+        $('#igO').textContent=`جارٍ الرفع… ${Math.min(i+4,jobs.length)} من ${jobs.length}`;
+        const j=await adminApi({action:'setImages',items:jobs.slice(i,i+4)});ok+=j.updated;bad+=j.errors.length;
+      }
+      $('#igO').innerHTML=`<b style="color:#1a9b4b">✓ تم رفع ${ok} صورة.</b>${bad?` تعذر ${bad}.`:''} بتظهر عند العملاء خلال ثواني.`;syncProducts();
+    }catch(e){$('#igO').textContent='تعذر الرفع. تحقق من كلمة السر ومن تحديث Code.gs.';b.disabled=false}
+  };
+}
 function parseTable(t){
   t=String(t||'').replace(/^\uFEFF/,'').trim();if(!t)return[];
   const lines=t.split(/\r?\n/).filter(l=>l.trim());
@@ -523,9 +579,10 @@ function openBulk(){
     }catch(e){$('#bkO').textContent='تعذر الاستيراد. تحقق من كلمة السر والاتصال، وحدّث Code.gs لو لسه ما حدّثتوش.';b.disabled=false}
   };
 }
-if(!CLOUD){$('#opsBtn').style.display='none';$('#importBtn').style.display='none';$('#bulkBtn').style.display='none';
+if(!CLOUD){$('#opsBtn').style.display='none';$('#importBtn').style.display='none';$('#bulkBtn').style.display='none';$('#imgBtn').style.display='none';
   document.body.insertAdjacentHTML('afterbegin','<div style="background:#ffe4e4;color:#b00020;padding:10px 16px;text-align:center;font-weight:700">⚠️ رابط السيرفر غير محمّل، فأزرار الطلبات والاستيراد مخفية. ضع ملف config.js (وفيه رابط السيرفر) في نفس مجلد هذه الصفحة ثم حدّث.</div>')}
 $('#bulkBtn').onclick=openBulk;
+$('#imgBtn').onclick=openImgs;
 $('#opsBtn').onclick=openOps;
 $('#importBtn').onclick=openImport;
 

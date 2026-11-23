@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Store Online | متجر الكتروني</title>
 <link rel="icon" href="logo.png">
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2b0a6b">
+<link rel="apple-touch-icon" href="icon-192.png">
+
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -138,6 +143,7 @@ footer b{color:var(--yellow)}
 .walnum b{font-size:1.35rem;color:var(--purple-d);letter-spacing:1px}
 .walnum button{background:var(--yellow);color:var(--purple-dd);font-weight:800;padding:8px 16px;border-radius:50px}
 .co .saved{color:var(--muted);font-size:.9rem;margin:-4px 0 6px}
+@supports not (aspect-ratio:1){.thumb{height:170px}.lthumb{height:84px}}
 /* Cart & checkout */
 .cart-btn{position:relative;color:#fff;font-weight:700;padding:9px 16px;border:2px solid rgba(255,255,255,.4);border-radius:50px;white-space:nowrap}
 .cart-btn:hover{border-color:var(--yellow)}
@@ -204,7 +210,7 @@ footer b{color:var(--yellow)}
 
 <footer>
   <p><b>Store Online</b> — كل ما تحتاجه في مكان واحد</p>
-  <p style="margin-top:6px"><a href="#track" style="color:var(--yellow)">تتبع طلبك</a> · <a href="#returns" style="color:var(--yellow)">الاسترجاع</a></p>
+  <p style="margin-top:6px"><a href="#track" style="color:var(--yellow)">تتبع طلبك</a> · <a href="#returns" style="color:var(--yellow)">الاسترجاع</a> · <a href="privacy.html" style="color:var(--yellow)">سياسة الخصوصية</a> · <a href="privacy.html#delete" style="color:var(--yellow)">حذف الحساب</a></p>
 </footer>
 
 
@@ -368,6 +374,7 @@ function openAccount(first){
     <label for="aAddr">العنوان بالتفصيل</label><input id="aAddr" value="${esc(u.addr||'')}">`}
     <div class="row"><button class="buy" type="submit">${first?'ابدأ التسوق':'حفظ التعديلات'}</button>${first?'':'<button class="cancel" type="button" id="aCancel">إلغاء</button>'}</div>
     ${first?'':'<button type="button" class="del" id="aOut" style="width:100%;margin-top:12px">تسجيل الخروج ومسح بياناتي</button>'}
+    ${first?'':'<button type="button" class="del" id="aDel" style="width:100%;margin-top:8px">🗑 طلب حذف حسابي وبياناتي نهائياً</button>'}
   </form>`;
   m.classList.add('open');
   $('#accForm').onsubmit=e=>{
@@ -382,6 +389,12 @@ function openAccount(first){
   };
   if(!first){
     $('#aCancel').onclick=()=>m.classList.remove('open');
+    $('#aDel').onclick=async()=>{
+      if(!confirm('سيتم إرسال طلب لحذف حسابك وبياناتك من المتجر. متابعة؟'))return;
+      const u=user||{};
+      if(CLOUD){const ok=await send({action:'deleteRequest',name:u.name||'',phone:u.phone||''});toast(ok?'تم استلام طلب الحذف، وسنحذف بياناتك قريباً':'سنرسل الطلب تلقائياً عند عودة الاتصال')}
+      else window.open('https://wa.me/'+OWNER_WA+'?text='+encodeURIComponent('طلب حذف حساب وبيانات\nالاسم: '+(u.name||'')+'\nالموبايل: '+(u.phone||'')),'_blank');
+    };
     $('#aOut').onclick=()=>{
       if(!confirm('سيتم مسح بياناتك من هذا الجهاز. متابعة؟'))return;
       user=null;try{localStorage.removeItem('store_user')}catch(e){}
@@ -474,6 +487,7 @@ function renderCheckout(){
 
     <h3>طريقة الدفع</h3>
     <label class="pay"><input type="radio" name="pay" value="cod" checked> 💵 الدفع عند الاستلام</label>
+    ${window.ENABLE_CARD?`
     <label class="pay"><input type="radio" name="pay" value="card"> 💳 بطاقة بنكية</label>
     <div class="payx" id="payCard">
       <label>رقم البطاقة<input id="cardNum" inputmode="numeric" maxlength="19" placeholder="0000 0000 0000 0000" pattern="[0-9 ]{16,19}"></label>
@@ -481,6 +495,7 @@ function renderCheckout(){
       <label>CVV<input id="cardCvv" inputmode="numeric" maxlength="4" pattern="[0-9]{3,4}"></label></div>
       <p class="note">نموذج تجريبي: لا يتم حفظ بيانات البطاقة ولا خصم أي مبلغ. للدفع الفعلي اربط الموقع ببوابة دفع مثل Paymob أو Fawry.</p>
     </div>
+    `:''}
     <label class="pay"><input type="radio" name="pay" value="wallet"> 📱 محفظة إلكترونية / إنستاباي</label>
     <div class="payx" id="payWallet"><p style="margin-top:12px">حوّل الإجمالي <b>${money(t.total)}</b> على رقم المحفظة:</p>
       <div class="walnum"><b dir="ltr">${PAY_NUMBER}</b><button type="button" id="copyNum">نسخ الرقم</button></div>
@@ -495,15 +510,15 @@ function renderCheckout(){
 
   if(user){$('#cName').value=user.name||'';$('#cPhone').value=user.phone||'';$('#cGov').value=user.gov||'';$('#cCity').value=user.city||'';$('#cAddr').value=user.addr||''}
   $('#copyNum').onclick=()=>{navigator.clipboard?navigator.clipboard.writeText(PAY_NUMBER).then(()=>toast('تم نسخ الرقم'),()=>toast(PAY_NUMBER)):toast(PAY_NUMBER)};
-  const card=['#cardNum','#cardExp','#cardCvv'].map(x=>$(x));
+  const card=['#cardNum','#cardExp','#cardCvv'].map(x=>$(x)).filter(Boolean);
   document.querySelectorAll('input[name=pay]').forEach(r=>r.onchange=()=>{
     const v=document.querySelector('input[name=pay]:checked').value;
-    $('#payCard').classList.toggle('on',v==='card');
+    if($('#payCard'))$('#payCard').classList.toggle('on',v==='card');
     $('#payWallet').classList.toggle('on',v==='wallet');
     card.forEach(c=>c.required=v==='card');
   });
-  $('#cardExp').oninput=e=>{let v=e.target.value.replace(/\D/g,'').slice(0,4);if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);e.target.value=v};
-  $('#cardNum').oninput=e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,16).replace(/(.{4})/g,'$1 ').trim()};
+  if($('#cardExp'))$('#cardExp').oninput=e=>{let v=e.target.value.replace(/\D/g,'').slice(0,4);if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);e.target.value=v};
+  if($('#cardNum'))$('#cardNum').oninput=e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,16).replace(/(.{4})/g,'$1 ').trim()};
 
   $('#coForm').onsubmit=e=>{
     e.preventDefault();
@@ -633,7 +648,7 @@ function renderTrack(){
   };
   loadMine();
   let auto=null;try{auto=JSON.parse(sessionStorage.getItem('trk_auto')||'null');sessionStorage.removeItem('trk_auto')}catch(e){}
-  if(auto){$('#trId').value=auto.id;$('#trPhone').value=auto.phone;$('#trForm').requestSubmit()}
+  if(auto){$('#trId').value=auto.id;$('#trPhone').value=auto.phone;$('#trForm').dispatchEvent(new Event('submit',{cancelable:true}))}
 }
 function renderReturns(){
   const u=user||{}, lo=localOrders();
@@ -712,6 +727,20 @@ route();
 syncProducts();flushP=flushOutbox();
 if(!ADMIN){setInterval(syncProducts,15000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncProducts()})}
 if(!user&&!ADMIN)openAccount(true);
+
+if('serviceWorker' in navigator&&/^https?:/.test(location.protocol))window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+
 </script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .then(() => console.log("Yahia Store App Ready"))
+      .catch(error => console.error("Service Worker Error:", error));
+  });
+}
+</script>
+
 </body>
 </html>
