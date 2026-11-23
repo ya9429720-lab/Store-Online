@@ -334,33 +334,11 @@ function renderProduct(id){
 let loaded=!CLOUD;
 function catList(){return CLOUD?[...new Set(products.map(p=>p.cat).filter(Boolean))]:CATS}
 function reroute(){if(['','#','#products','#cart'].includes(location.hash)||/^#product-/.test(location.hash))route()}
-
 async function api(msg){
-  const r = await fetch(API, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8'
-    },
-    body: JSON.stringify(msg),
-    redirect: 'follow'
-  });
-
-  const text = await r.text();
-  let j;
-
-  try {
-    j = JSON.parse(text);
-  } catch (e) {
-    throw new Error('رد السيرفر ليس JSON صالحًا: ' + text.slice(0, 200));
-  }
-
-  if (!j.ok) {
-    throw new Error(j.error || 'فشل تنفيذ الطلب');
-  }
-
-  return j;
+  const r=await fetch(API,{method:'POST',body:JSON.stringify(msg)});
+  if(!r.ok)throw new Error(r.status);
+  const j=await r.json();if(!j.ok)throw new Error(j.error||'failed');return j;
 }
-
 /* messages that fail to send (no internet...) are kept and retried automatically */
 const outbox=()=>{try{return JSON.parse(localStorage.getItem('store_outbox')||'[]')}catch(e){return[]}};
 const setOutbox=a=>{try{localStorage.setItem('store_outbox',JSON.stringify(a))}catch(e){}};
@@ -599,8 +577,8 @@ function openBulk(){
       $('#bkO').innerHTML=`<b style="color:#1a9b4b">✓ تمت إضافة ${add} منتج وتحديث ${upd}.</b> المنتجات الجديدة بتظهر عند العملاء خلال ثواني.${errs.length?`<p class="muted">تم تجاهل ${errs.length} صف: ${errs.slice(0,5).map(e=>'سطر '+e.line+' ('+esc(e.error)+')').join('، ')}</p>`:''}`;
       syncProducts();
     }catch(e){
-  $('#bkO').textContent='سبب المشكلة: '+(e.message||String(e));
-  b.disabled=false;
+  $('#bkO').textContent = 'سبب المشكلة: ' + (e.message || String(e));
+  b.disabled = false;
 }
   };
 }
