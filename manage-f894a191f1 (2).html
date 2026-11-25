@@ -196,7 +196,7 @@ footer b{color:var(--yellow)}
       <input id="q" type="search" placeholder="ابحث عن أي منتج..." aria-label="بحث عن المنتجات" autocomplete="off">
       <button type="submit">بحث</button>
     </form>
-    <span style="color:#ffc400;font-size:.8rem;white-space:nowrap" id="admVer">لوحة البائع · النسخة 7</span>
+    <span style="color:#ffc400;font-size:.8rem;white-space:nowrap" id="admVer">لوحة البائع · النسخة 9</span>
     <button class="add-btn" id="openAdd">+ إضافة منتج</button>
     <button class="add-btn exp" id="exportBtn" type="button">⬇ تصدير للعملاء</button>
     <button class="add-btn exp" id="opsBtn" type="button">📦 الطلبات والمرتجعات</button>
@@ -275,7 +275,7 @@ const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const norm = s => String(s).toLowerCase().replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').trim();
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2200)}
 
-function thumb(p){return p.img?`<img src="${p.img}" alt="${esc(p.name)}">`:(p.emoji||'🛍️')}
+function thumb(p){return p.img?`<img src="${esc(p.img)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.outerHTML='🛍️'">`:(p.emoji||'🛍️')}
 
 function renderHome(){
   const list = products.filter(p=>{
@@ -386,14 +386,14 @@ function statusHTML(o){
 
 let adminKey=(()=>{try{return localStorage.getItem('store_key')||''}catch(e){return ''}})();
 function askKey(){return new Promise(res=>{
-  const m=$('#accModal');
-  m.innerHTML=`<form class="box"><h2>دخول البائع</h2><p style="color:var(--muted)">اكتب كلمة سر البائع (ADMIN_KEY) التي وضعتها في Code.gs.</p><label>كلمة السر</label><input id="oPw" type="password" required autocomplete="current-password" dir="ltr"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="oSh" style="width:auto"> إظهار الكلمة</label><div class="row"><button class="buy" type="submit">دخول</button><button class="cancel" type="button" id="oX">إلغاء</button></div></form>`;
+  let m=$('#keyModal');if(!m){m=document.createElement('div');m.id='keyModal';m.className='modal';m.style.zIndex=90;document.body.appendChild(m)}
+  m.innerHTML=`<form class="box"><h2>دخول البائع</h2><p style="color:var(--muted)">اكتب كلمة سر البائع (ADMIN_KEY) التي وضعتها في Code.gs.</p><label>كلمة السر</label><input id="oPw" type="password" required autocomplete="current-password" dir="ltr"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="oSh" style="width:auto"> إظهار الكلمة</label><div class="row"><button class="buy" type="submit">دخول</button><button class="cancel" type="button" id="oX">إلغاء</button></div><p id="oErr" style="color:#c22;font-weight:700;margin-top:8px"></p></form>`;
   m.classList.add('open');
   $('#oSh').onchange=e=>{$('#oPw').type=e.target.checked?'text':'password'};
   m.querySelector('form').onsubmit=async e=>{
     e.preventDefault();const k=$('#oPw').value;
     try{await api({action:'auth',key:k});adminKey=k;try{localStorage.setItem('store_key',k)}catch(x){}m.classList.remove('open');res(true)}
-    catch(err){toast(err.message==='unauthorized'?'كلمة السر غير صحيحة':'تعذر الاتصال بالسيرفر ('+err.message+'). تأكد من رابط السيرفر ومن نشر آخر نسخة.')}
+    catch(err){$('#oErr').textContent=(err.message==='unauthorized'?'كلمة السر غير صحيحة':'تعذر الاتصال بالسيرفر ('+err.message+'). تأكد من رابط السيرفر ومن نشر آخر نسخة.')}
   };
   $('#oX').onclick=()=>{m.classList.remove('open');res(false)};
 })}
@@ -523,20 +523,33 @@ function openImgs(){
   };
 }
 function parseTable(t){
-  t=String(t||'').replace(/^\uFEFF/,'').trim();if(!t)return[];
+  t=String(t||'').replace(/^\uFEFF/,'').replace(/^sep=.\r?\n/i,'').trim();if(!t)return[];
   const lines=t.split(/\r?\n/).filter(l=>l.trim());
-  const d=lines[0].includes('\t')?'\t':(lines[0].includes('|')?'|':',');
+  const cnt=c=>lines[0].split(c).length-1,d=['\t','|',';',','].reduce((b,c)=>cnt(c)>cnt(b)?c:b,',');
   const split=l=>{
-    if(d!==',')return l.split(d).map(x=>x.trim());
+    if(d!==','&&d!==';')return l.split(d).map(x=>x.trim());
     const o=[];let c='',q=false;
     for(let i=0;i<l.length;i++){const ch=l[i];
       if(q){if(ch==='"'){if(l[i+1]==='"'){c+='"';i++}else q=false}else c+=ch}
-      else if(ch==='"')q=true;else if(ch===','){o.push(c.trim());c=''}else c+=ch}
+      else if(ch==='"')q=true;else if(ch===d){o.push(c.trim());c=''}else c+=ch}
     o.push(c.trim());return o;
   };
   let rows=lines.map(split);
-  if(rows[0].length>1&&!/^[\d.,٠-٩]+$/.test(String(rows[0][1]).trim()))rows=rows.slice(1); // صف العناوين
+  if(rows[0].length>1&&!/[\d٠-٩]/.test(String(rows[0][1])))rows=rows.slice(1); // صف العناوين
   return rows;
+}
+function driveThumb(u){const m=String(u).match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=)([\w-]+)/);return m?'https://drive.google.com/thumbnail?id='+m[1]+'&sz=w800':u}
+function checkImgs(rows){ // يجرّب تحميل كل رابط صورة ويقولك أيهم مش شغال
+  rows.slice(0,8).forEach((x,i)=>{
+    const c=$('.ick[data-i="'+i+'"]');if(!c||!x.img)return;
+    const u=driveThumb(x.img),drive=u!==x.img;
+    if(!/^https:\/\//i.test(u)){c.textContent='❌ لازم يبدأ بـ https';return}
+    const im=new Image();im.referrerPolicy='no-referrer';
+    im.onload=()=>{c.textContent=drive?'✅ (تأكد إن الملف «أي شخص لديه الرابط»)':'✅'};
+    im.onerror=()=>{c.textContent='❌ مش رابط صورة مباشر أو الملف غير مشارك'};
+    setTimeout(()=>{if(c.textContent==='⏳')c.textContent='⚠️ بطيء، غير مؤكد'},8000);
+    im.src=u;
+  });
 }
 function openBulk(){
   const m=$('#accModal');
@@ -559,13 +572,15 @@ function openBulk(){
     }).filter(x=>x.name);
   };
   $('#bkX').onclick=()=>m.classList.remove('open');
-  $('#bkF').onchange=e=>{const f=e.target.files[0];if(f)f.text().then(t=>{$('#bkT').value=t})};
+  $('#bkF').onchange=e=>{const f=e.target.files[0];if(f)f.text().then(t=>{$('#bkT').value=t;preview()})};
   $('#bkTpl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFFالاسم,السعر,القسم,الوصف,رابط الصورة,رابط المصدر\nسماعة بلوتوث,450,إلكترونيات,سماعة لاسلكية,https://example.com/a.jpg,https://www.amazon.eg/dp/XXXX\nشاحن سريع,120,إكسسوارات,شاحن 30 واط,,'],{type:'text/csv'}));a.download='products-template.csv';a.click()};
-  $('#bkP').onclick=()=>{
+  const preview=()=>{
     ready=build();const bad=ready.filter(x=>!(x.price>0)).length;
-    $('#bkO').innerHTML=ready.length?`<b>${ready.length} منتج جاهز للاستيراد${bad?` (منها ${bad} بدون سعر وهتتجاهل)`:''}</b><table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:.9rem"><tr style="color:var(--mut)"><td>الاسم</td><td>التكلفة</td><td>السعر النهائي</td><td>القسم</td></tr>${ready.slice(0,8).map(x=>`<tr style="border-top:1px solid var(--line)"><td>${esc(x.name)}</td><td>${x.cost===''?'—':esc(x.cost)}</td><td><b>${esc(x.price)}</b></td><td>${esc(x.cat)}</td></tr>`).join('')}</table>${ready.length>8?`<p class="muted">… و${ready.length-8} آخرين</p>`:''}`:'لا توجد منتجات، الصق الجدول أولاً.';
+    $('#bkO').innerHTML=ready.length?`<b>${ready.length} منتج جاهز للاستيراد${bad?` (منها ${bad} بدون سعر وهتتجاهل)`:''}</b><table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:.9rem"><tr style="color:var(--mut)"><td>الاسم</td><td>التكلفة</td><td>السعر النهائي</td><td>القسم</td><td>الصورة</td></tr>${ready.slice(0,8).map((x,i)=>`<tr style="border-top:1px solid var(--line)"><td>${esc(x.name)}</td><td>${x.cost===''?'—':esc(x.cost)}</td><td><b>${esc(x.price)}</b></td><td>${esc(x.cat)}</td><td class="ick" data-i="${i}">${x.img?'⏳':'—'}</td></tr>`).join('')}</table>${ready.length>8?`<p class="muted">… و${ready.length-8} آخرين</p>`:''}`:'لا توجد منتجات، الصق الجدول أولاً.';
     $('#bkGo').disabled=!ready.length;
+    checkImgs(ready);
   };
+  $('#bkP').onclick=preview;$('#bkT').oninput=preview;['#bkC','#bkM','#bkV','#bkD'].forEach(x=>$(x).addEventListener('input',preview));
   $('#bkGo').onclick=async()=>{
     const b=$('#bkGo');b.disabled=true;let add=0,upd=0,errs=[];
     try{
@@ -576,10 +591,7 @@ function openBulk(){
       }
       $('#bkO').innerHTML=`<b style="color:#1a9b4b">✓ تمت إضافة ${add} منتج وتحديث ${upd}.</b> المنتجات الجديدة بتظهر عند العملاء خلال ثواني.${errs.length?`<p class="muted">تم تجاهل ${errs.length} صف: ${errs.slice(0,5).map(e=>'سطر '+e.line+' ('+esc(e.error)+')').join('، ')}</p>`:''}`;
       syncProducts();
-    }catch(e){
-  $('#bkO').textContent = 'سبب المشكلة: ' + (e.message || String(e));
-  b.disabled = false;
-}
+    }catch(e){$('#bkO').innerHTML='<b style="color:#c22">تعذر الاستيراد:</b> '+(e.message==='bad action'?'الكود المنشور على جوجل قديم ومفيهوش الاستيراد. الصق Code.gs الجديد وانشر New version.':esc(e.message));b.disabled=false}
   };
 }
 if(!CLOUD){$('#opsBtn').style.display='none';$('#importBtn').style.display='none';$('#bulkBtn').style.display='none';$('#imgBtn').style.display='none';

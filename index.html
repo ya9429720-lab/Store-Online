@@ -6,7 +6,7 @@
 <title>Store Online | متجر الكتروني</title>
 <link rel="icon" href="logo.png">
 
-<link rel="manifest" href="/Store-Online/manifest.webmanifest">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2b0a6b">
 <link rel="apple-touch-icon" href="icon-192.png">
 
@@ -250,7 +250,7 @@ const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const norm = s => String(s).toLowerCase().replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').trim();
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2200)}
 
-function thumb(p){return p.img?`<img src="${p.img}" alt="${esc(p.name)}">`:(p.emoji||'🛍️')}
+function thumb(p){return p.img?`<img src="${esc(p.img)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.outerHTML='🛍️'">`:(p.emoji||'🛍️')}
 
 function renderHome(){
   const list = products.filter(p=>{
@@ -731,16 +731,5 @@ if(!user&&!ADMIN)openAccount(true);
 if('serviceWorker' in navigator&&/^https?:/.test(location.protocol))window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 
 </script>
-
-<script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js")
-      .then(() => console.log("Yahia Store App Ready"))
-      .catch(error => console.error("Service Worker Error:", error));
-  });
-}
-</script>
-
 </body>
 </html>
